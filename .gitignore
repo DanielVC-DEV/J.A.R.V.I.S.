@@ -1,0 +1,36 @@
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Secretos y configuración local
+.env
+*.key
+settings.local.json
+
+# Datos generados en tiempo de ejecución
+*.db
+*.sqlite3
+audit.jsonl
+logs/
+src/jarvis/assets/models/
+
+# Artefactos de empaquetado
+build/
+dist/
+*.spec.bak
+Output/
+
+# Caché de Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editores y sistema operativo
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

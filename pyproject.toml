@@ -1,0 +1,82 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jarvis"
+version = "0.1.0"
+description = "Asistente de inteligencia artificial de escritorio para Windows"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+
+dependencies = [
+    "anthropic",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "python-dotenv>=1.0",
+    "keyring>=25.0",
+    "psutil>=6.0",
+    "rich>=13.9",
+    # Dependencias exclusivas de Windows. El marcador permite instalar el
+    # proyecto en otros sistemas para ejecutar las pruebas que no dependen
+    # del sistema operativo.
+    "pycaw; sys_platform == 'win32'",
+    "comtypes; sys_platform == 'win32'",
+    "pywin32; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-mock>=3.14",
+    "ruff>=0.7",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+jarvis = "jarvis.ui.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jarvis"]
+
+
+# --------------------------------------------------------------------------- #
+# Herramientas de desarrollo
+# --------------------------------------------------------------------------- #
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "BLE",  # flake8-blind-except
+    "RUF",  # reglas propias de Ruff
+]
+ignore = [
+    "E501",  # la longitud de línea la gobierna el formateador
+]
+
+[tool.ruff.lint.per-file-ignores]
+# En las pruebas se declaran herramientas de ejemplo que no siempre se usan.
+"tests/*" = ["B008", "F841"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers"
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+ignore_missing_imports = true
+warn_unused_ignores = true
