@@ -85,6 +85,7 @@ class LocalTranscriber:
         """
         self._language = settings.stt_language
         self._model_name = settings.resolved_stt_model()
+        self._vocabulary = settings.stt_vocabulary
 
         if model is not None:
             self._model = model
@@ -175,6 +176,9 @@ class LocalTranscriber:
                 language=self._language or None,
                 beam_size=5,
                 vad_filter=False,
+                # Mismo cometido que en el motor remoto: sin vocabulario de
+                # referencia, los nombres propios se transcriben a oído.
+                initial_prompt=self._vocabulary or None,
             )
             texto = "".join(segmento.text for segmento in segmentos)
         except Exception as exc:  # noqa: BLE001 - frontera con la biblioteca

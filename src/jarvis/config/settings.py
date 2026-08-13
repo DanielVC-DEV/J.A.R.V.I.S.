@@ -277,6 +277,76 @@ class Settings(BaseSettings):
         description="Dispositivo del motor local: «auto», «cuda» o «cpu».",
     )
 
+    stt_vocabulary: str = Field(
+        default=(
+            "JARVIS. Chrome, Discord, Spotify, Steam, Visual Studio Code, "
+            "Windows, Python."
+        ),
+        description=(
+            "Vocabulario de referencia para la transcripción. Whisper lo usa "
+            "para reconocer nombres propios que de otro modo escribiría a "
+            "oído: sin él, «JARVIS» se transcribe como «eyjarvís». Añade aquí "
+            "los nombres de los programas que uses."
+        ),
+    )
+
+    mic_device: int | None = Field(
+        default=None,
+        description=(
+            "Índice del micrófono. Si se omite, el predeterminado del sistema. "
+            "Ejecuta «python scripts/probar_voz.py» para ver los disponibles."
+        ),
+    )
+
+    wake_word_enabled: bool = Field(
+        default=True,
+        description="Si el asistente debe escuchar su nombre de continuo.",
+    )
+
+    wake_word: str = Field(
+        default="hey_jarvis",
+        description="Modelo de palabra de activación de openWakeWord.",
+    )
+
+    wake_word_threshold: float = Field(
+        default=0.5,
+        ge=0.05,
+        le=0.99,
+        description=(
+            "Confianza mínima para dar por buena una activación. Subirlo "
+            "reduce los disparos accidentales; bajarlo, las repeticiones."
+        ),
+    )
+
+    tts_enabled: bool = Field(
+        default=True,
+        description="Si el asistente responde en voz alta.",
+    )
+
+    tts_voice: str = Field(
+        default="es-CL-LorenzoNeural",
+        description=(
+            "Voz neuronal empleada al hablar. Véase SUGGESTED_VOICES en "
+            "jarvis.voice.tts para las alternativas en español."
+        ),
+    )
+
+    tts_rate: str = Field(
+        default="+0%",
+        description=(
+            "Ajuste de la velocidad del habla, como «+15%» o «-10%». Un "
+            "asistente que confirma acciones se agradece algo más rápido."
+        ),
+    )
+
+    hotkey: str = Field(
+        default="f9",
+        description=(
+            "Tecla que se mantiene pulsada para hablar. Alternativa a la "
+            "palabra de activación, útil cuando no conviene escuchar siempre."
+        ),
+    )
+
     @field_validator("log_level", mode="before")
     @classmethod
     def _normalise_log_level(cls, value: object) -> str:

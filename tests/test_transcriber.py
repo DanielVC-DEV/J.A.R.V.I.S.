@@ -128,6 +128,31 @@ def test_the_language_is_pinned() -> None:
     assert b"es" in handler.registro["content"]
 
 
+def test_the_vocabulary_is_sent_as_a_reference() -> None:
+    """Sin él, Whisper escribe «eyjarvís» en lugar de «JARVIS»."""
+    handler = _responde(text="hola")
+    _remoto(handler).transcribe(_clip())
+
+    contenido = handler.registro["content"]
+    assert b'name="prompt"' in contenido
+    assert "JARVIS".encode() in contenido
+
+
+def test_an_empty_vocabulary_is_omitted() -> None:
+    handler = _responde(text="hola")
+    _remoto(handler, stt_vocabulary="   ").transcribe(_clip())
+    assert b'name="prompt"' not in handler.registro["content"]
+
+
+def test_the_local_model_receives_the_vocabulary_too() -> None:
+    modelo = _ModeloPostizo(["hola"])
+    LocalTranscriber(
+        _settings(stt_backend=SttBackend.LOCAL), model=modelo
+    ).transcribe(_clip())
+    _, kwargs = modelo.recibido
+    assert "JARVIS" in kwargs["initial_prompt"]
+
+
 def test_the_key_travels_as_a_bearer_token() -> None:
     handler = _responde(text="hola")
     _remoto(handler).transcribe(_clip())

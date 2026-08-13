@@ -45,6 +45,7 @@ class RemoteTranscriber:
         self._base_url = settings.resolved_stt_base_url()
         self._model = settings.resolved_stt_model()
         self._language = settings.stt_language
+        self._vocabulary = settings.stt_vocabulary
 
         self._headers: dict[str, str] = {}
         clave = settings.resolved_stt_api_key()
@@ -78,6 +79,11 @@ class RemoteTranscriber:
             # tiempo y elimina los saltos a otra lengua en frases cortas.
             "language": self._language,
         }
+
+        # Whisper transcribe a oído los nombres que no conoce: sin este
+        # vocabulario de referencia, «JARVIS» se convierte en «eyjarvís».
+        if self._vocabulary.strip():
+            formulario["prompt"] = self._vocabulary
         archivos = {"file": ("audio.wav", clip.to_wav_bytes(), "audio/wav")}
 
         try:

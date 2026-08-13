@@ -23,7 +23,7 @@ import numpy as np
 from jarvis.voice.audio import SAMPLE_RATE, AudioClip
 from jarvis.voice.vad import UtteranceDetector, UtteranceState
 
-__all__ = ["MicrophoneError", "Microphone", "list_input_devices"]
+__all__ = ["Microphone", "MicrophoneError", "list_input_devices"]
 
 _logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ class Microphone:
         return int(self.sample_rate * self.frame_ms / 1000)
 
     @contextmanager
-    def _stream(self) -> Iterator[Any]:
+    def open_stream(self) -> Iterator[Any]:
         """Abre el flujo de entrada y garantiza su cierre."""
         sd = _sounddevice()
         try:
@@ -102,7 +102,7 @@ class Microphone:
         with flujo:
             yield flujo
 
-    def _read(self, stream: Any) -> np.ndarray:
+    def read(self, stream: Any) -> np.ndarray:
         """Lee un bloque del flujo y lo devuelve como señal monofónica."""
         datos, desbordado = stream.read(self.frame_size)
         if desbordado:
@@ -129,9 +129,9 @@ class Microphone:
         bloques: list[np.ndarray] = []
         necesarios = int(CALIBRATION_SECONDS * 1000 / self.frame_ms)
 
-        with self._stream() as flujo:
+        with self.open_stream() as flujo:
             for _ in range(necesarios):
-                bloques.append(self._read(flujo))
+                bloques.append(self.read(flujo))
 
         return detector.calibrate(AudioClip.from_frames(bloques, self.sample_rate))
 
@@ -151,9 +151,9 @@ class Microphone:
         bloques: list[np.ndarray] = []
         maximo = int(60_000 / self.frame_ms)  # tope de un minuto
 
-        with self._stream() as flujo:
+        with self.open_stream() as flujo:
             while should_continue() and len(bloques) < maximo:
-                bloques.append(self._read(flujo))
+                bloques.append(self.read(flujo))
 
         return AudioClip.from_frames(bloques, self.sample_rate)
 
@@ -171,9 +171,9 @@ class Microphone:
         """
         detector.reset()
 
-        with self._stream() as flujo:
+        with self.open_stream() as flujo:
             while True:
-                estado = detector.push(self._read(flujo))
+                estado = detector.push(self.read(flujo))
                 if estado is UtteranceState.FINISHED:
                     return detector.clip
                 if estado is UtteranceState.TIMED_OUT:
