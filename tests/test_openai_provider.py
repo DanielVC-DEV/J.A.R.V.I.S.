@@ -318,7 +318,35 @@ def test_a_connection_failure_is_explained() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route to host")
 
-    with pytest.raises(LLMError, match="No se pudo contactar"):
+    with pytest.raises(LLMError, match="cortafuegos"):
+        _provider(handler).chat("s", [Message.user("hola")], [])
+
+
+def test_a_dns_failure_is_distinguished() -> None:
+    """No resolver el nombre y ser cortado por un cortafuegos se arreglan distinto."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("[Errno 11001] getaddrinfo failed")
+
+    with pytest.raises(LLMError, match="no se pudo resolver"):
+        _provider(handler).chat("s", [Message.user("hola")], [])
+
+
+def test_a_refused_connection_points_at_a_local_service() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    with pytest.raises(LLMError, match="Ollama"):
+        _provider(handler).chat("s", [Message.user("hola")], [])
+
+
+def test_a_certificate_failure_is_explained() -> None:
+    """Las redes que inspeccionan el tráfico cifrado rompen la validación."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("certificate verify failed")
+
+    with pytest.raises(LLMError, match="certificado"):
         _provider(handler).chat("s", [Message.user("hola")], [])
 
 

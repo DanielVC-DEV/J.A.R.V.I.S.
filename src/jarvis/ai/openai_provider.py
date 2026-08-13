@@ -45,6 +45,58 @@ __all__ = ["OpenAICompatibleProvider"]
 REQUEST_TIMEOUT_SECONDS = 60.0
 
 
+def _describe_connection_failure(exc: httpx.RequestError, base_url: str) -> str:
+    """Redacta un mensaje útil a partir de un fallo de conexión.
+
+    Las causas posibles llevan a soluciones muy distintas —no hay red, el
+    nombre no resuelve, un cortafuegos corta la conexión, un proxy intercepta
+    el cifrado— y el tipo de excepción las distingue. Presentarlas todas como
+    «no se pudo contactar» obliga al usuario a adivinar.
+
+    Args:
+        exc: Excepción de transporte lanzada por el cliente.
+        base_url: Dirección a la que se intentaba llegar.
+
+    Returns:
+        Un mensaje con la causa probable y qué comprobar.
+    """
+    causa = str(exc).lower()
+    encabezado = f"No se pudo contactar con el servicio en {base_url}."
+
+    # El contenido del mensaje se examina antes que el tipo: un fallo de
+    # certificado llega envuelto en ConnectError y, de otro modo, quedaría
+    # confundido con un corte de red.
+    if "certificate" in causa or "ssl" in causa:
+        return (
+            f"{encabezado} Falló la validación del certificado. Es habitual en "
+            "redes que inspeccionan el tráfico cifrado con su propio "
+            "certificado."
+        )
+
+    if isinstance(exc, httpx.ConnectError):
+        if "getaddrinfo" in causa or "name or service" in causa or "nodename" in causa:
+            return (
+                f"{encabezado} El nombre del servidor no se pudo resolver: no "
+                "hay conexión a internet, o el DNS de esta red bloquea el "
+                "dominio."
+            )
+        if "refused" in causa:
+            return (
+                f"{encabezado} La conexión fue rechazada. Si apuntas a un "
+                "servicio local como Ollama, comprueba que esté en marcha."
+            )
+        return (
+            f"{encabezado} No se pudo establecer la conexión, lo que en redes "
+            "corporativas o educativas suele deberse a un cortafuegos. Si tu "
+            "red usa proxy, define HTTPS_PROXY antes de arrancar."
+        )
+
+    if isinstance(exc, httpx.ProxyError):
+        return f"{encabezado} El proxy configurado rechazó la conexión."
+
+    return f"{encabezado} {type(exc).__name__}: {exc}"
+
+
 def _encode_tools(tools: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     """Traduce el catálogo de herramientas al formato de OpenAI."""
     return [
@@ -235,10 +287,7 @@ class OpenAICompatibleProvider:
                 f"El servicio no respondió en {REQUEST_TIMEOUT_SECONDS:.0f} segundos."
             ) from exc
         except httpx.RequestError as exc:
-            raise LLMError(
-                f"No se pudo contactar con el servicio en {self._base_url}. "
-                "Revisa la conexión y la dirección configurada."
-            ) from exc
+            raise LLMError(_describe_connection_failure(exc, self._base_url)) from exc
 
         if respuesta.status_code != httpx.codes.OK:
             raise LLMError(self._describe_failure(respuesta))

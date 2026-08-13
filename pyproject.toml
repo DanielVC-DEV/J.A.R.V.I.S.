@@ -18,6 +18,9 @@ dependencies = [
     "keyring>=25.0",
     "psutil>=6.0",
     "rich>=13.9",
+    # Voz: captura y tratamiento del audio.
+    "numpy>=1.26",
+    "sounddevice>=0.4.6",
     # Dependencias exclusivas de Windows. El marcador permite instalar el
     # proyecto en otros sistemas para ejecutar las pruebas que no dependen
     # del sistema operativo.
@@ -32,6 +35,14 @@ dev = [
     "pytest-mock>=3.14",
     "ruff>=0.7",
     "mypy>=1.13",
+]
+
+# Transcripción en el propio equipo. Se mantiene aparte porque pesa más de un
+# gigabyte y no hace falta si se usa el servicio remoto.
+local-stt = [
+    "faster-whisper>=1.0",
+    "nvidia-cudnn-cu12>=9.0; sys_platform == 'win32'",
+    "nvidia-cublas-cu12; sys_platform == 'win32'",
 ]
 
 [project.scripts]

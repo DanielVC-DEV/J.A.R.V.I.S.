@@ -28,6 +28,7 @@ __all__ = [
     "ConfigurationError",
     "Provider",
     "Settings",
+    "SttBackend",
     "delete_api_key",
     "load_settings",
     "store_api_key",
@@ -71,6 +72,25 @@ KNOWN_ENDPOINTS: dict[str, str] = {
 #: demasiado como para suponer nada, así que se exige indicarlo.
 _DEFAULT_MODELS: dict[Provider, str] = {
     Provider.ANTHROPIC: "claude-sonnet-5",
+}
+
+
+class SttBackend(StrEnum):
+    """Motor empleado para transcribir la voz."""
+
+    REMOTE = "remote"
+    """Servicio remoto compatible con OpenAI, como el Whisper de Groq."""
+
+    LOCAL = "local"
+    """faster-whisper ejecutándose en el propio equipo."""
+
+
+#: Modelo de transcripción por omisión de cada motor. Los identificadores
+#: difieren: el servicio remoto usa el nombre publicado en su catálogo y la
+#: biblioteca local el del repositorio de modelos.
+_DEFAULT_STT_MODELS: dict[SttBackend, str] = {
+    SttBackend.REMOTE: "whisper-large-v3-turbo",
+    SttBackend.LOCAL: "large-v3-turbo",
 }
 
 
@@ -216,6 +236,47 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO")
 
+    # -- Voz ---------------------------------------------------------------- #
+
+    stt_backend: SttBackend = Field(
+        default=SttBackend.REMOTE,
+        description="Motor de transcripción: «remote» o «local».",
+    )
+
+    stt_model: str = Field(
+        default="",
+        description="Modelo de transcripción. Si se omite, el propio del motor.",
+    )
+
+    stt_language: str = Field(
+        default="es",
+        description=(
+            "Idioma esperado. Fijarlo evita que el modelo lo deduzca, lo que "
+            "ahorra tiempo y elimina los saltos a otra lengua en frases cortas."
+        ),
+    )
+
+    stt_base_url: str = Field(
+        default="",
+        description=(
+            "Dirección del servicio de transcripción. Si se omite, se reutiliza "
+            "la del modelo de lenguaje cuando es compatible."
+        ),
+    )
+
+    stt_api_key: SecretStr | None = Field(
+        default=None,
+        description=(
+            "Clave del servicio de transcripción. Si se omite, se reutiliza la "
+            "del modelo de lenguaje."
+        ),
+    )
+
+    stt_device: str = Field(
+        default="auto",
+        description="Dispositivo del motor local: «auto», «cuda» o «cpu».",
+    )
+
     @field_validator("log_level", mode="before")
     @classmethod
     def _normalise_log_level(cls, value: object) -> str:
@@ -228,7 +289,7 @@ class Settings(BaseSettings):
             )
         return level
 
-    @field_validator("model", "base_url", mode="before")
+    @field_validator("model", "base_url", "stt_model", "stt_base_url", mode="before")
     @classmethod
     def _normalise_optional_text(cls, value: object) -> object:
         """Recorta los espacios sobrantes de los valores opcionales.
@@ -303,6 +364,51 @@ class Settings(BaseSettings):
                 f"estos atajos: {atajos}."
             )
         return destino.rstrip("/")
+
+    def resolved_stt_model(self) -> str:
+        """Devuelve el modelo de transcripción efectivo."""
+        return self.stt_model or _DEFAULT_STT_MODELS[self.stt_backend]
+
+    def resolved_stt_base_url(self) -> str:
+        """Devuelve la dirección efectiva del servicio de transcripción.
+
+        Si no se indica una propia, se reutiliza la del modelo de lenguaje
+        cuando este ya apunta a un servicio compatible. Es el caso habitual:
+        quien usa Groq para pensar puede usarlo también para oír, con la misma
+        clave.
+
+        Returns:
+            La dirección del servicio, sin barra final.
+
+        Raises:
+            ConfigurationError: Si no hay ninguna dirección deducible.
+        """
+        if self.stt_base_url:
+            destino = KNOWN_ENDPOINTS.get(self.stt_base_url.lower(), self.stt_base_url)
+            return destino.rstrip("/")
+
+        if self.provider is Provider.OPENAI:
+            return self.resolved_base_url()
+
+        raise ConfigurationError(
+            "Falta JARVIS_STT_BASE_URL. El modelo de lenguaje no usa un "
+            "servicio compatible, así que la transcripción necesita el suyo "
+            "propio (por ejemplo «groq»)."
+        )
+
+    def resolved_stt_api_key(self) -> str:
+        """Devuelve la clave del servicio de transcripción.
+
+        Returns:
+            La clave propia si se indicó, la del modelo de lenguaje en caso
+            contrario, o una cadena vacía si no hay ninguna. Un servicio local
+            puede no necesitarla.
+        """
+        if self.stt_api_key is not None:
+            return self.stt_api_key.get_secret_value()
+        if self.api_key is not None:
+            return self.api_key.get_secret_value()
+        return ""
 
     # -- Utilidades -------------------------------------------------------- #
 
