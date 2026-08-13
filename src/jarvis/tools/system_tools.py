@@ -16,11 +16,7 @@ __all__ = ["adjust_volume", "get_system_info", "get_volume", "set_mute", "set_vo
 
 @tool(risk=Risk.SAFE, category="system")
 def get_system_info() -> str:
-    """Consulta el estado del equipo: procesador, memoria, discos y batería.
-
-    Úsala cuando el usuario pregunte cómo va su computador, cuánta memoria o
-    espacio libre le queda, o cuánto tiempo lleva encendido.
-    """
+    """Consulta el estado del equipo: CPU, memoria, discos y batería."""
     return system.describe_system()
 
 
@@ -35,10 +31,7 @@ def get_volume() -> str:
 
 @tool(risk=Risk.SAFE, category="system")
 def set_volume(level: int) -> str:
-    """Fija el volumen del sistema a un valor concreto.
-
-    Úsala cuando el usuario indique un nivel determinado, como «pon el volumen
-    al 40». Para subir o bajar sin precisar cuánto, usa adjust_volume.
+    """Fija el volumen a un valor concreto. Para «súbelo un poco», usa adjust_volume.
 
     Args:
         level: Nivel deseado, entre 0 y 100.
@@ -48,13 +41,10 @@ def set_volume(level: int) -> str:
 
 @tool(risk=Risk.SAFE, category="system")
 def adjust_volume(delta: int) -> str:
-    """Sube o baja el volumen de forma relativa al nivel actual.
-
-    Úsala para órdenes imprecisas como «súbelo un poco» o «baja el volumen».
-    Un paso discreto ronda los 10 puntos; uno notable, los 25.
+    """Sube o baja el volumen. Para «súbelo un poco» y similares.
 
     Args:
-        delta: Puntos porcentuales a sumar. Negativo para bajar.
+        delta: Puntos a sumar; 10 es discreto, 25 notable. Negativo baja.
     """
     return f"Volumen ajustado al {audio.adjust_volume(delta)}%."
 

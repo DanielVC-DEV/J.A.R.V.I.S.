@@ -283,10 +283,74 @@ def test_a_rejected_key_is_explained() -> None:
         _provider(handler).chat("s", [Message.user("hola")], [])
 
 
-def test_a_rate_limit_is_explained() -> None:
-    handler = _falla(429, {"error": {"message": "Rate limit reached"}})
+def test_a_rate_limit_is_retried_and_then_explained(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Las capas gratuitas limitan por minuto: reintentar es lo razonable."""
+    from jarvis.ai import openai_provider
+
+    monkeypatch.setattr(openai_provider.time, "sleep", lambda s: None)
+    intentos = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        intentos.append(1)
+        return httpx.Response(429, json={"error": {"message": "Rate limit reached"}})
+
     with pytest.raises(LLMError, match="límite de peticiones"):
         _provider(handler).chat("s", [Message.user("hola")], [])
+
+    assert len(intentos) == openai_provider.MAX_RETRIES + 1
+
+
+def test_a_rate_limit_that_clears_is_transparent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Si el segundo intento pasa, el usuario solo percibe una pausa."""
+    from jarvis.ai import openai_provider
+
+    monkeypatch.setattr(openai_provider.time, "sleep", lambda s: None)
+    intentos = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        intentos.append(1)
+        if len(intentos) == 1:
+            return httpx.Response(429, json={"error": {"message": "slow down"}})
+        return httpx.Response(200, json=_payload_texto("Listo."))
+
+    respuesta = _provider(handler).chat("s", [Message.user("hola")], [])
+    assert respuesta.text == "Listo."
+    assert len(intentos) == 2
+
+
+def test_the_service_reported_wait_is_respected() -> None:
+    """Reintentar antes de tiempo solo consume otro intento."""
+    from jarvis.ai.openai_provider import _retry_delay
+
+    respuesta = httpx.Response(
+        429, json={"error": {"message": "Please try again in 1.8975s."}}
+    )
+    assert 2.0 < _retry_delay(respuesta, 0) < 2.9
+
+    en_ms = httpx.Response(429, json={"error": {"message": "try again in 250ms"}})
+    assert _retry_delay(en_ms, 0) < 1.0
+
+
+def test_the_retry_after_header_takes_precedence() -> None:
+    respuesta = httpx.Response(429, headers={"retry-after": "3"}, text="")
+    assert _retry_delay_of(respuesta) == 3.0
+
+
+def _retry_delay_of(response: httpx.Response) -> float:
+    from jarvis.ai.openai_provider import _retry_delay
+
+    return _retry_delay(response, 0)
+
+
+def test_the_wait_is_capped() -> None:
+    from jarvis.ai.openai_provider import MAX_RETRY_WAIT_SECONDS
+
+    respuesta = httpx.Response(429, headers={"retry-after": "9999"}, text="")
+    assert _retry_delay_of(respuesta) == MAX_RETRY_WAIT_SECONDS
 
 
 def test_an_unknown_model_is_explained() -> None:

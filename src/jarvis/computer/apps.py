@@ -22,16 +22,25 @@ la ambigüedad para que el asistente pregunte.
 from __future__ import annotations
 
 import csv
-import difflib
 import io
 import os
 import subprocess
 import sys
-import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 
+from jarvis.computer import matching
+from jarvis.computer.matching import (
+    ACCEPT_THRESHOLD,
+    AMBIGUITY_GAP,
+    MAX_CANDIDATES,
+    normalise as _normalise,
+)
+
 __all__ = [
+    "ACCEPT_THRESHOLD",
+    "AMBIGUITY_GAP",
+    "MAX_CANDIDATES",
     "AmbiguousApplicationError",
     "Application",
     "ApplicationError",
@@ -43,23 +52,6 @@ __all__ = [
     "resolve",
     "score_match",
 ]
-
-
-# --------------------------------------------------------------------------- #
-# Umbrales de decisión
-# --------------------------------------------------------------------------- #
-
-#: Puntuación mínima para considerar que un término identifica una aplicación.
-#: Por debajo se informa de que no se encontró nada, en lugar de abrir algo
-#: que el usuario no pidió.
-ACCEPT_THRESHOLD = 70.0
-
-#: Distancia mínima entre la mejor coincidencia y la siguiente para darla por
-#: buena. Si dos aplicaciones puntúan casi igual, se pregunta.
-AMBIGUITY_GAP = 5.0
-
-#: Número máximo de alternativas que se ofrecen al desambiguar.
-MAX_CANDIDATES = 4
 
 
 class ApplicationError(RuntimeError):
@@ -189,120 +181,17 @@ BUILTIN_APPLICATIONS: tuple[Application, ...] = (
 
 
 # --------------------------------------------------------------------------- #
-# Coincidencia (lógica pura, sin dependencias del sistema operativo)
+# Coincidencia
 # --------------------------------------------------------------------------- #
-
-
-def _normalise(text: str) -> str:
-    """Reduce un texto a una forma comparable.
-
-    Pasa a minúsculas, elimina las tildes y la puntuación, y normaliza los
-    espacios. Sin este paso, «configuración» y «configuracion» serían términos
-    distintos, y la transcripción de voz produce ambas formas indistintamente.
-
-    Se emplea la descomposición canónica (NFD) y no la de compatibilidad
-    (NFKD): esta última traduciría el símbolo «™» a las letras «TM», que se
-    colarían en el nombre y falsearían la comparación.
-
-    Args:
-        text: Texto a normalizar.
-
-    Returns:
-        El texto reducido a minúsculas sin acentos ni signos.
-    """
-    descompuesto = unicodedata.normalize("NFD", text)
-    sin_tildes = "".join(c for c in descompuesto if not unicodedata.combining(c))
-    limpio = "".join(c if c.isalnum() or c.isspace() else " " for c in sin_tildes)
-    return " ".join(limpio.lower().split())
-
-
-def _ratio(a: str, b: str) -> float:
-    """Similitud entre dos cadenas, entre 0 y 1."""
-    return difflib.SequenceMatcher(None, a, b).ratio()
-
-
-def _score_word(query_word: str, word: str) -> float:
-    """Puntúa una palabra suelta contra otra.
-
-    Args:
-        query_word: Palabra dicha por el usuario, ya normalizada.
-        word: Palabra de la denominación de la aplicación, ya normalizada.
-
-    Returns:
-        Una puntuación entre 0 y 100.
-    """
-    if query_word == word:
-        return 100.0
-    if word.startswith(query_word):
-        return 92.0
-    if query_word in word:
-        return 78.0
-    return _ratio(query_word, word) * 90.0
-
-
-def _score_term(query: str, term: str) -> float:
-    """Puntúa un término de búsqueda contra una denominación concreta.
-
-    Se combinan dos lecturas complementarias:
-
-    * **Consulta completa contra denominación completa.** Cubre el caso
-      habitual, en el que el usuario nombra la aplicación tal cual o comete
-      una errata: «crome» debe encontrar «Chrome».
-    * **Palabra a palabra.** Cubre las abreviaturas y las omisiones, donde la
-      consulta no aparece literalmente: «vs code» debe encontrar «Visual
-      Studio Code». Se pondera a partes iguales la mejor palabra y el promedio
-      de todas, de modo que acertar una palabra no baste si las demás fallan.
-
-    Esta gradación explícita se prefiere a una métrica opaca porque su
-    comportamiento puede razonarse y comprobarse caso por caso.
-
-    Args:
-        query: Término normalizado que dijo el usuario.
-        term: Denominación normalizada de la aplicación.
-
-    Returns:
-        Una puntuación entre 0 y 100.
-    """
-    if not query or not term:
-        return 0.0
-
-    if query == term:
-        return 100.0
-
-    palabras = term.split()
-    tokens = query.split()
-
-    if query in palabras:
-        directa = 95.0
-    elif term.startswith(query):
-        directa = 92.0
-    elif any(palabra.startswith(query) for palabra in palabras):
-        directa = 88.0
-    elif query in term:
-        directa = 78.0
-    else:
-        directa = _ratio(query, term) * 75.0
-
-    parciales = [
-        max((_score_word(token, palabra) for palabra in palabras), default=0.0)
-        for token in tokens
-    ]
-    por_palabras = (
-        0.5 * max(parciales) + 0.5 * (sum(parciales) / len(parciales))
-        if parciales
-        else 0.0
-    )
-
-    # Ante dos coincidencias equivalentes se prefiere el nombre más escueto:
-    # «Google Chrome» antes que «Chrome Remote Desktop».
-    exceso = max(0, len(term) - len(query))
-    return max(0.0, max(directa, por_palabras) - min(6.0, exceso * 0.5))
+#
+# La lógica vive en ``jarvis.computer.matching``, compartida con la gestión de
+# ventanas: el problema —encontrar lo que el usuario nombró de forma
+# aproximada— es el mismo, y tenerlo en un solo sitio evita que ambas
+# implementaciones diverjan.
 
 
 def score_match(query: str, application: Application) -> float:
     """Puntúa un término de búsqueda contra una aplicación.
-
-    Se evalúan el nombre y todos sus alias, y se conserva la mejor puntuación.
 
     Args:
         query: Término tal como lo dijo el usuario.
@@ -311,11 +200,7 @@ def score_match(query: str, application: Application) -> float:
     Returns:
         Una puntuación entre 0 y 100.
     """
-    normalizado = _normalise(query)
-    return max(
-        (_score_term(normalizado, _normalise(term)) for term in application.search_terms),
-        default=0.0,
-    )
+    return matching.score(query, application.search_terms)
 
 
 def rank(query: str, applications: list[Application]) -> list[Match]:
@@ -326,16 +211,12 @@ def rank(query: str, applications: list[Application]) -> list[Match]:
         applications: Índice sobre el que buscar.
 
     Returns:
-        Las coincidencias con puntuación positiva, de mejor a peor. En caso de
-        empate se antepone el nombre más corto, para que el resultado sea
-        estable entre ejecuciones.
+        Las coincidencias con puntuación positiva, de mejor a peor.
     """
-    coincidencias = [
-        Match(application=app, score=score_match(query, app)) for app in applications
+    return [
+        Match(application=m.item, score=m.score)  # type: ignore[arg-type]
+        for m in matching.rank(query, applications, lambda a: a.search_terms)
     ]
-    positivas = [m for m in coincidencias if m.score > 0]
-    positivas.sort(key=lambda m: (-m.score, len(m.application.name), m.application.name))
-    return positivas
 
 
 def resolve(query: str, applications: list[Application] | None = None) -> Application:
@@ -354,26 +235,15 @@ def resolve(query: str, applications: list[Application] | None = None) -> Applic
         AmbiguousApplicationError: Si varias puntúan de forma equivalente.
     """
     indice = applications if applications is not None else list(index_applications())
-    coincidencias = rank(query, indice)
 
-    if not coincidencias or coincidencias[0].score < ACCEPT_THRESHOLD:
-        raise ApplicationNotFoundError(
-            f"No encontré ninguna aplicación que se corresponda con «{query}»."
+    try:
+        return matching.resolve(
+            query, indice, lambda a: a.search_terms, what="aplicación"
         )
-
-    mejor = coincidencias[0]
-    empatadas = [
-        m
-        for m in coincidencias
-        if m.score >= ACCEPT_THRESHOLD and mejor.score - m.score < AMBIGUITY_GAP
-    ]
-
-    if len(empatadas) > 1:
-        raise AmbiguousApplicationError(
-            query, [m.application for m in empatadas[:MAX_CANDIDATES]]
-        )
-
-    return mejor.application
+    except matching.AmbiguousMatchError as exc:
+        raise AmbiguousApplicationError(query, list(exc.candidates)) from None
+    except matching.NoMatchError as exc:
+        raise ApplicationNotFoundError(str(exc)) from None
 
 
 # --------------------------------------------------------------------------- #

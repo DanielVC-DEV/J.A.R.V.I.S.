@@ -236,6 +236,23 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO")
 
+    tool_categories: str = Field(
+        default="",
+        description=(
+            "Categorías de herramientas que se ofrecen al modelo, separadas "
+            "por comas: system, apps, windows, input, files. Vacío significa "
+            "todas. El catálogo se reenvía en cada vuelta del bucle, de modo "
+            "que recortarlo alarga lo que cabe en el límite de tokens por "
+            "minuto de una capa gratuita."
+        ),
+    )
+
+    def enabled_categories(self) -> frozenset[str] | None:
+        """Devuelve las categorías activas, o ``None`` si no hay restricción."""
+        nombres = {c.strip().lower() for c in self.tool_categories.split(",")}
+        nombres.discard("")
+        return frozenset(nombres) if nombres else None
+
     # -- Voz ---------------------------------------------------------------- #
 
     stt_backend: SttBackend = Field(

@@ -84,6 +84,11 @@ class Orchestrator:
     extra_context: str = ""
     history: list[Message] = field(default_factory=list)
 
+    categories: frozenset[str] | None = None
+    """Categorías de herramientas que se ofrecen al modelo. ``None`` las
+    ofrece todas. Acotarlas reduce lo que se reenvía en cada vuelta, que es el
+    gasto fijo de un turno."""
+
     # -- Conversación ------------------------------------------------------- #
 
     def reset(self) -> None:
@@ -102,7 +107,7 @@ class Orchestrator:
         """
         self.history.append(Message.user(text))
 
-        catalogo = self.registry.schemas()
+        catalogo = self._catalogue()
         sistema = build_system_prompt(self.extra_context)
         respuesta_final = ""
         entrada = salida = 0
@@ -149,6 +154,22 @@ class Orchestrator:
             input_tokens=entrada,
             output_tokens=salida,
         )
+
+    def _catalogue(self) -> list[dict[str, Any]]:
+        """Construye el catálogo que se envía al modelo.
+
+        Returns:
+            Los esquemas de las herramientas activas. Si no se acotaron
+            categorías, todas.
+        """
+        if self.categories is None:
+            return self.registry.schemas()
+
+        return [
+            spec.to_schema()
+            for spec in self.registry.all()
+            if spec.category in self.categories
+        ]
 
     # -- Ejecución de una herramienta --------------------------------------- #
 

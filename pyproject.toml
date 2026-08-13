@@ -18,6 +18,7 @@ dependencies = [
     "keyring>=25.0",
     "psutil>=6.0",
     "rich>=13.9",
+    "send2trash>=1.8",
     # Voz: captura, activación y tratamiento del audio.
     "numpy>=1.26",
     "sounddevice>=0.4.6",
@@ -29,6 +30,8 @@ dependencies = [
     # proyecto en otros sistemas para ejecutar las pruebas que no dependen
     # del sistema operativo.
     "pycaw; sys_platform == 'win32'",
+    "pyautogui; sys_platform == 'win32'",
+    "pyperclip; sys_platform == 'win32'",
     "comtypes; sys_platform == 'win32'",
     "pywin32; sys_platform == 'win32'",
 ]

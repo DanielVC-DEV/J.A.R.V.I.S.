@@ -86,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
             guard=Guard.with_default_policies(),
             confirmer=_confirm,
             max_iterations=settings.max_tool_iterations,
+            categories=settings.enabled_categories(),
         ),
         microphone=microfono,
         transcriber=transcriptor,

@@ -22,6 +22,9 @@ importantes respecto a la API de Anthropic:
 from __future__ import annotations
 
 import json
+import logging
+import re
+import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -40,9 +43,55 @@ from jarvis.config.settings import Settings
 
 __all__ = ["OpenAICompatibleProvider"]
 
+_logger = logging.getLogger(__name__)
+
 #: Margen de espera. Un asistente de voz que tarde más de esto ya ha fallado
 #: desde el punto de vista del usuario, por mucho que la respuesta llegue.
 REQUEST_TIMEOUT_SECONDS = 60.0
+
+#: Reintentos ante un límite de peticiones. Dos bastan para superar los cortes
+#: por tokens por minuto sin que el usuario perciba que el asistente se colgó.
+MAX_RETRIES = 2
+
+#: Tope de espera entre reintentos. Por encima, es preferible informar del
+#: límite a dejar al usuario esperando sin saber qué ocurre.
+MAX_RETRY_WAIT_SECONDS = 20.0
+
+#: El servicio indica el tiempo restante dentro del mensaje de error.
+_RETRY_IN = re.compile(r"try again in ([\d.]+)\s*(ms|s)\b", re.IGNORECASE)
+
+
+def _retry_delay(response: httpx.Response, attempt: int) -> float:
+    """Determina cuánto esperar antes de reintentar.
+
+    Se consulta primero la cabecera estándar, después el tiempo que el propio
+    mensaje de error indica, y solo en último término se recurre a una espera
+    creciente. Respetar lo que dice el servicio evita tanto reintentar
+    demasiado pronto como esperar de más.
+
+    Args:
+        response: Respuesta que informó del límite.
+        attempt: Número de intento ya realizado, empezando en cero.
+
+    Returns:
+        Los segundos que conviene esperar.
+    """
+    cabecera = response.headers.get("retry-after")
+    if cabecera:
+        try:
+            return min(float(cabecera), MAX_RETRY_WAIT_SECONDS)
+        except ValueError:
+            pass
+
+    coincidencia = _RETRY_IN.search(response.text or "")
+    if coincidencia:
+        valor = float(coincidencia.group(1))
+        segundos = valor / 1000 if coincidencia.group(2).lower() == "ms" else valor
+        # Un margen sobre el tiempo indicado evita reintentar justo en el
+        # límite y volver a ser rechazado.
+        return min(segundos + 0.5, MAX_RETRY_WAIT_SECONDS)
+
+    return min(2.0 * (attempt + 1), MAX_RETRY_WAIT_SECONDS)
 
 
 def _describe_connection_failure(exc: httpx.RequestError, base_url: str) -> str:
@@ -278,21 +327,63 @@ class OpenAICompatibleProvider:
             cuerpo["tools"] = _encode_tools(tools)
             cuerpo["tool_choice"] = "auto"
 
-        try:
-            respuesta = self._client.post(
-                "/chat/completions", json=cuerpo, headers=self._headers
-            )
-        except httpx.TimeoutException as exc:
-            raise LLMError(
-                f"El servicio no respondió en {REQUEST_TIMEOUT_SECONDS:.0f} segundos."
-            ) from exc
-        except httpx.RequestError as exc:
-            raise LLMError(_describe_connection_failure(exc, self._base_url)) from exc
+        respuesta = self._post_with_retries(cuerpo)
 
         if respuesta.status_code != httpx.codes.OK:
             raise LLMError(self._describe_failure(respuesta))
 
         return self._decode_response(respuesta)
+
+    def _post_with_retries(self, body: dict[str, Any]) -> httpx.Response:
+        """Envía la petición, reintentando si el servicio pide esperar.
+
+        Las capas gratuitas limitan los tokens por minuto, y una orden que
+        encadena varias herramientas los agota con facilidad. El servicio
+        indica cuánto falta para poder continuar, de modo que esperar ese
+        tiempo convierte un fallo en una pausa que el usuario apenas nota.
+
+        Args:
+            body: Cuerpo de la petición.
+
+        Returns:
+            La respuesta obtenida. Si tras agotar los reintentos sigue siendo
+            un error, se devuelve tal cual para que la capa superior la
+            explique.
+
+        Raises:
+            LLMError: Si la petición no llegó a completarse por red o espera.
+        """
+        for intento in range(MAX_RETRIES + 1):
+            try:
+                respuesta = self._client.post(
+                    "/chat/completions", json=body, headers=self._headers
+                )
+            except httpx.TimeoutException as exc:
+                raise LLMError(
+                    f"El servicio no respondió en "
+                    f"{REQUEST_TIMEOUT_SECONDS:.0f} segundos."
+                ) from exc
+            except httpx.RequestError as exc:
+                raise LLMError(
+                    _describe_connection_failure(exc, self._base_url)
+                ) from exc
+
+            if respuesta.status_code != httpx.codes.TOO_MANY_REQUESTS:
+                return respuesta
+            if intento == MAX_RETRIES:
+                return respuesta
+
+            espera = _retry_delay(respuesta, intento)
+            _logger.info(
+                "Límite de peticiones alcanzado; esperando %.1f s antes de "
+                "reintentar (%d de %d).",
+                espera,
+                intento + 1,
+                MAX_RETRIES,
+            )
+            time.sleep(espera)
+
+        return respuesta  # pragma: no cover - inalcanzable
 
     # -- Interpretación ----------------------------------------------------- #
 

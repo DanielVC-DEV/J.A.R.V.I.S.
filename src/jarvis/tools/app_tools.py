@@ -22,15 +22,13 @@ LISTING_LIMIT = 60
 
 @tool(risk=Risk.SAFE, category="apps")
 def open_program(name: str) -> str:
-    """Abre una aplicación instalada en el equipo.
+    """Abre una aplicación instalada. Admite nombres aproximados.
 
-    Admite nombres aproximados: «crome» encuentra Google Chrome y «vs code»
-    encuentra Visual Studio Code. Si varias aplicaciones coinciden, la
-    herramienta lo indica en lugar de elegir por su cuenta; en ese caso,
-    pregunta al usuario cuál quería.
+    Queda en primer plano: no hace falta abrirla otra vez para escribir en
+    ella.
 
     Args:
-        name: Nombre de la aplicación tal como lo dijo el usuario.
+        name: Nombre de la aplicación, como lo dijo el usuario.
     """
     try:
         return apps.open_application(name)
@@ -49,14 +47,10 @@ def open_program(name: str) -> str:
 
 @tool(risk=Risk.SAFE, category="apps")
 def list_applications(filter_text: str = "") -> str:
-    """Enumera las aplicaciones instaladas en el equipo.
-
-    Úsala cuando no encuentres una aplicación o cuando el usuario pregunte qué
-    tiene instalado.
+    """Enumera las aplicaciones instaladas.
 
     Args:
-        filter_text: Texto para acotar el listado. Si se omite, se enumeran las
-            primeras aplicaciones del índice.
+        filter_text: Texto para acotar el listado.
     """
     indice = list(apps.index_applications())
 
