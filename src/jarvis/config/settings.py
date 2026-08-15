@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from pydantic import Field, SecretStr, field_validator
@@ -236,6 +237,33 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO")
 
+    allowed_paths: str = Field(
+        default="",
+        description=(
+            "Carpetas adicionales sobre las que el asistente puede operar, "
+            "separadas por punto y coma. Se añaden a las personales del "
+            "usuario. Ampliar la jaula debe ser un acto deliberado y escrito: "
+            "por eso se declara aquí y no puede hacerlo el propio modelo."
+        ),
+    )
+
+    def resolved_allowed_paths(self) -> tuple[Path, ...]:
+        """Devuelve las carpetas adicionales que existen realmente.
+
+        Las inexistentes se descartan en silencio: una ruta mal escrita no
+        debe impedir arrancar, y conceder permiso sobre algo que no existe no
+        tiene efecto alguno.
+        """
+        rutas = []
+        for texto in self.allowed_paths.replace(",", ";").split(";"):
+            limpio = texto.strip().strip('"').strip("'")
+            if not limpio:
+                continue
+            ruta = Path(limpio).expanduser()
+            if ruta.is_dir():
+                rutas.append(ruta.resolve())
+        return tuple(rutas)
+
     tool_categories: str = Field(
         default="",
         description=(
@@ -353,6 +381,16 @@ class Settings(BaseSettings):
         description=(
             "Ajuste de la velocidad del habla, como «+15%» o «-10%». Un "
             "asistente que confirma acciones se agradece algo más rápido."
+        ),
+    )
+
+    tts_max_chars: int = Field(
+        default=350,
+        ge=0,
+        description=(
+            "Longitud máxima de lo que se pronuncia. Una respuesta larga se "
+            "recorta por el final de una frase y se avisa de que el resto "
+            "está en pantalla. Cero desactiva el recorte."
         ),
     )
 

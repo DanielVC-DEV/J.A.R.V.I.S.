@@ -126,6 +126,38 @@ def _ratio(a: str, b: str) -> float:
 # --------------------------------------------------------------------------- #
 
 
+#: Palabras funcionales del español. Se descartan al comparar palabra por
+#: palabra porque producen coincidencias falsas: «el» está contenido en
+#: «cumpleaños», de modo que «sube el volumen» puntuaría alto contra una
+#: anotación sobre un cumpleaños. No aportan significado y sí ruido.
+_STOP_WORDS = frozenset(
+    {
+        "a", "al", "ante", "con", "contra", "de", "del", "desde", "e", "el",
+        "en", "entre", "es", "esa", "ese", "esta", "este", "esto", "hacia",
+        "hasta", "la", "las", "le", "les", "lo", "los", "me", "mi", "mis",
+        "o", "para", "por", "que", "se", "si", "sin", "sobre", "su", "sus",
+        "te", "tu", "tus", "un", "una", "unas", "unos", "y",
+    }
+)
+
+
+def _meaningful_tokens(query: str) -> list[str]:
+    """Descarta las palabras funcionales de una consulta.
+
+    Si al hacerlo no queda ninguna —el usuario dijo solo «el de»—, se
+    conservan todas: es preferible una comparación ruidosa a ninguna.
+
+    Args:
+        query: Consulta ya normalizada.
+
+    Returns:
+        Las palabras con las que merece la pena comparar.
+    """
+    tokens = query.split()
+    utiles = [t for t in tokens if t not in _STOP_WORDS]
+    return utiles or tokens
+
+
 def _score_word(query_word: str, word: str) -> float:
     """Puntúa una palabra suelta contra otra."""
     if query_word == word:
@@ -164,7 +196,7 @@ def _score_term(query: str, term: str) -> float:
         return 100.0
 
     palabras = term.split()
-    tokens = query.split()
+    tokens = _meaningful_tokens(query)
 
     if query in palabras:
         directa = 95.0

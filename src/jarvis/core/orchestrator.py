@@ -16,6 +16,7 @@ la interfaz gráfica y desde la voz.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -45,6 +46,8 @@ from jarvis.security.audit import AuditEntry, AuditLog, audit_log
 from jarvis.security.guard import Guard, Verdict
 
 __all__ = ["ConfirmationRequest", "Confirmer", "Orchestrator", "always_deny"]
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +92,11 @@ class Orchestrator:
     ofrece todas. Acotarlas reduce lo que se reenvía en cada vuelta, que es el
     gasto fijo de un turno."""
 
+    context_provider: Callable[[str], str] | None = None
+    """Función que aporta contexto adicional a partir de la orden del usuario.
+    La memoria la usa para inyectar solo las anotaciones pertinentes, en lugar
+    de volcarla entera en cada turno."""
+
     # -- Conversación ------------------------------------------------------- #
 
     def reset(self) -> None:
@@ -108,7 +116,7 @@ class Orchestrator:
         self.history.append(Message.user(text))
 
         catalogo = self._catalogue()
-        sistema = build_system_prompt(self.extra_context)
+        sistema = build_system_prompt(self._context_for(text))
         respuesta_final = ""
         entrada = salida = 0
 
@@ -154,6 +162,30 @@ class Orchestrator:
             input_tokens=entrada,
             output_tokens=salida,
         )
+
+    def _context_for(self, text: str) -> str:
+        """Reúne el contexto que acompaña a las instrucciones de sistema.
+
+        Args:
+            text: Orden que acaba de dar el usuario.
+
+        Returns:
+            El contexto fijo más el que aporte el proveedor, si lo hay. Un
+            fallo del proveedor no interrumpe el turno: perder el contexto
+            degrada la respuesta, pero impedirla sería peor.
+        """
+        partes = [self.extra_context] if self.extra_context else []
+
+        if self.context_provider is not None:
+            try:
+                aportado = self.context_provider(text)
+            except Exception:  # noqa: BLE001 - frontera con código ajeno
+                _logger.warning("No se pudo obtener el contexto adicional.")
+            else:
+                if aportado.strip():
+                    partes.append(aportado)
+
+        return "\n\n".join(partes)
 
     def _catalogue(self) -> list[dict[str, Any]]:
         """Construye el catálogo que se envía al modelo.

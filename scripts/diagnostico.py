@@ -95,6 +95,13 @@ def main() -> int:  # noqa: C901 - un diagnóstico lineal se lee mejor entero
         print(f"  dirección     : SIN RESOLVER — {exc}")
         return 1
 
+    from jarvis.security.guard import default_allowed_roots
+
+    print("\n  carpetas autorizadas:")
+    for carpeta in (*default_allowed_roots(), *settings.resolved_allowed_paths()):
+        print(f"    {carpeta}")
+    print("    (añade más con JARVIS_ALLOWED_PATHS en el archivo .env)")
+
     es_local = "localhost" in destino or "127.0.0.1" in destino
     if not clave and not es_local:
         print("\n  FALLO: no hay clave configurada. Revisa el archivo .env.")

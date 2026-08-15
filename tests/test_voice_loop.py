@@ -21,7 +21,12 @@ from jarvis.security.guard import Guard
 from jarvis.security.risk import Risk
 from jarvis.ui.voice_loop import VoiceSession
 from jarvis.voice.audio import SAMPLE_RATE, AudioClip
-from jarvis.voice.tts import EdgeSpeaker, clean_for_speech
+from jarvis.voice.tts import (
+    TRUNCATION_NOTICE,
+    EdgeSpeaker,
+    clean_for_speech,
+    shorten_for_speech,
+)
 from jarvis.voice.transcriber import Transcription, TranscriptionError
 from jarvis.voice.vad import UtteranceDetector
 
@@ -65,6 +70,48 @@ def test_an_empty_text_stays_empty() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Recorte de las respuestas largas
+# --------------------------------------------------------------------------- #
+
+
+def test_a_short_answer_is_spoken_whole() -> None:
+    assert shorten_for_speech("Volumen al 70%.", 350) == "Volumen al 70%."
+
+
+def test_a_long_answer_is_cut_at_a_sentence() -> None:
+    """Una voz que se interrumpe a mitad de palabra suena a fallo."""
+    texto = (
+        "La RTX 5070 cuesta unos 600 euros. "
+        "El precio varía según la tienda. "
+        "Hay unidades disponibles en tres comercios. "
+        "También existe una versión Ti algo más cara."
+    )
+    dicho = shorten_for_speech(texto, 80)
+
+    assert dicho.startswith("La RTX 5070 cuesta unos 600 euros.")
+    assert dicho.endswith(TRUNCATION_NOTICE)
+    assert "versión Ti" not in dicho
+
+
+def test_the_listener_is_told_there_is_more() -> None:
+    """Sin aviso, el usuario creería que el asistente ya terminó."""
+    largo = "Frase completa. " * 40
+    assert TRUNCATION_NOTICE in shorten_for_speech(largo, 100)
+
+
+def test_a_single_endless_sentence_is_cut_by_words() -> None:
+    texto = "palabra " * 200
+    dicho = shorten_for_speech(texto, 60)
+    assert len(dicho) < 120
+    assert "palabr…" not in dicho  # nunca a mitad de palabra
+
+
+def test_truncation_can_be_disabled() -> None:
+    largo = "Frase. " * 100
+    assert shorten_for_speech(largo, 0) == largo
+
+
+# --------------------------------------------------------------------------- #
 # Sintetizador
 # --------------------------------------------------------------------------- #
 
@@ -98,6 +145,23 @@ def _hablante(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> tuple:
     hablante = EdgeSpeaker(_settings(**overrides), player=reproductor)
     monkeypatch.setattr(hablante, "synthesise", lambda texto: b"audio-mp3")
     return hablante, reproductor
+
+
+def test_a_long_response_is_shortened_before_speaking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """La pantalla ya muestra el texto entero; el oído no lo necesita."""
+    dicho: list[str] = []
+    reproductor = _ReproductorPostizo()
+    hablante = EdgeSpeaker(_settings(tts_max_chars=60), player=reproductor)
+    monkeypatch.setattr(
+        hablante, "synthesise", lambda t: (dicho.append(t), b"mp3")[1]
+    )
+
+    hablante.speak("Primera frase corta. " + "Relleno larguísimo. " * 20)
+
+    assert len(dicho[0]) < 200
+    assert TRUNCATION_NOTICE in dicho[0]
 
 
 def test_a_response_is_spoken(monkeypatch: pytest.MonkeyPatch) -> None:

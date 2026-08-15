@@ -346,6 +346,27 @@ def _retry_delay_of(response: httpx.Response) -> float:
     return _retry_delay(response, 0)
 
 
+def test_a_token_quota_waits_much_longer() -> None:
+    """Reintentar rápido ante un límite por tokens consume más cuota."""
+    from jarvis.ai.openai_provider import MIN_TOKEN_QUOTA_WAIT
+
+    por_peticion = httpx.Response(
+        429, json={"error": {"message": "Rate limit. Please try again in 15ms."}}
+    )
+    por_tokens = httpx.Response(
+        429,
+        json={
+            "error": {
+                "message": "Rate limit reached on tokens per minute (TPM): "
+                "Limit 8000. Please try again in 15ms."
+            }
+        },
+    )
+
+    assert _retry_delay_of(por_peticion) < 1.0
+    assert _retry_delay_of(por_tokens) >= MIN_TOKEN_QUOTA_WAIT
+
+
 def test_the_wait_is_capped() -> None:
     from jarvis.ai.openai_provider import MAX_RETRY_WAIT_SECONDS
 

@@ -38,7 +38,7 @@ from jarvis.core.events import (
 from jarvis.core.orchestrator import Orchestrator
 from jarvis.voice.audio import AudioClip
 from jarvis.voice.hotkey import PushToTalk
-from jarvis.voice.recorder import Microphone
+from jarvis.voice.recorder import Microphone, MicrophoneError
 from jarvis.voice.tts import Speaker
 from jarvis.voice.transcriber import Transcriber, TranscriptionError
 from jarvis.voice.vad import UtteranceDetector, UtteranceState
@@ -190,18 +190,23 @@ class VoiceSession:
             )
             return 1
 
-        self.console.print("[dim]Midiendo el ruido de fondo, guarda silencio…[/dim]")
-        umbral = self.microphone.calibrate(self.utterance)
-        if self.verbose:
-            self.console.print(f"[dim]· umbral de voz: {umbral:.4f}[/dim]")
-
         if self.hotkey is not None:
             self.hotkey.start()
 
-        self._announce()
-
         try:
+            # El micrófono se abre una sola vez para toda la sesión, incluida
+            # la calibración. Cerrar un flujo y abrir otro a continuación falla
+            # con algunos controladores de audio de Windows.
             with self.microphone.open_stream() as flujo:
+                self.console.print(
+                    "[dim]Midiendo el ruido de fondo, guarda silencio…[/dim]"
+                )
+                umbral = self.microphone.calibrate_from(self.utterance, flujo)
+                if self.verbose:
+                    self.console.print(f"[dim]· umbral de voz: {umbral:.4f}[/dim]")
+
+                self._announce()
+
                 while True:
                     bloque = self.microphone.read(flujo)
 
@@ -222,6 +227,12 @@ class VoiceSession:
 
         except KeyboardInterrupt:
             self.console.print()
+        except MicrophoneError as exc:
+            # El dispositivo puede desaparecer a mitad de sesión —unos
+            # auriculares que se desconectan—. Se explica en vez de mostrar
+            # una traza que no dice nada al usuario.
+            self.console.print(f"\n[red]{exc}[/red]")
+            return 1
         finally:
             if self.hotkey is not None:
                 self.hotkey.stop()

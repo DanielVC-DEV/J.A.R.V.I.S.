@@ -22,10 +22,10 @@ LISTING_LIMIT = 60
 
 @tool(risk=Risk.SAFE, category="apps")
 def open_program(name: str) -> str:
-    """Abre una aplicación instalada. Admite nombres aproximados.
+    """Abre una aplicación instalada por su nombre. NO admite rutas.
 
-    Queda en primer plano: no hace falta abrirla otra vez para escribir en
-    ella.
+    Para abrir una carpeta o un archivo usa open_folder. Queda en primer
+    plano: no hace falta abrirla otra vez para escribir en ella.
 
     Args:
         name: Nombre de la aplicación, como lo dijo el usuario.

@@ -103,8 +103,23 @@ class Microphone:
             yield flujo
 
     def read(self, stream: Any) -> np.ndarray:
-        """Lee un bloque del flujo y lo devuelve como señal monofónica."""
-        datos, desbordado = stream.read(self.frame_size)
+        """Lee un bloque del flujo y lo devuelve como señal monofónica.
+
+        Raises:
+            MicrophoneError: Si el dispositivo deja de responder. Ocurre al
+                desconectar unos auriculares en mitad de la sesión, o con
+                controladores que no admiten el uso que se les está dando.
+        """
+        try:
+            datos, desbordado = stream.read(self.frame_size)
+        except Exception as exc:  # noqa: BLE001 - frontera con el sistema de audio
+            raise MicrophoneError(
+                f"El micrófono dejó de responder: {exc}\n"
+                "Suele deberse al dispositivo elegido. Ejecuta "
+                "«python scripts/probar_voz.py --dispositivos» y prueba otro "
+                "definiendo JARVIS_MIC_DEVICE en el archivo .env."
+            ) from exc
+
         if desbordado:
             # Ocurre cuando el proceso no consume los bloques a tiempo. No
             # invalida la grabación, pero conviene dejar constancia.
@@ -113,8 +128,26 @@ class Microphone:
 
     # -- Modos de captura --------------------------------------------------- #
 
+    def calibrate_from(self, detector: UtteranceDetector, stream: Any) -> float:
+        """Mide el ruido de fondo usando un flujo ya abierto.
+
+        Es la variante que emplea el bucle de voz. Cerrar un flujo y abrir
+        otro a continuación falla con algunos controladores de audio de
+        Windows, de modo que toda la sesión debe compartir el mismo.
+
+        Args:
+            detector: Detector a calibrar.
+            stream: Flujo de entrada ya abierto.
+
+        Returns:
+            El umbral resultante.
+        """
+        necesarios = int(CALIBRATION_SECONDS * 1000 / self.frame_ms)
+        bloques = [self.read(stream) for _ in range(necesarios)]
+        return detector.calibrate(AudioClip.from_frames(bloques, self.sample_rate))
+
     def calibrate(self, detector: UtteranceDetector) -> float:
-        """Mide el ruido de fondo y ajusta el umbral del detector.
+        """Mide el ruido de fondo abriendo un flujo propio.
 
         Debe ejecutarse con el usuario en silencio. Basta hacerlo una vez al
         arrancar: el ruido de una habitación no cambia entre una frase y la
@@ -126,14 +159,8 @@ class Microphone:
         Returns:
             El umbral resultante.
         """
-        bloques: list[np.ndarray] = []
-        necesarios = int(CALIBRATION_SECONDS * 1000 / self.frame_ms)
-
         with self.open_stream() as flujo:
-            for _ in range(necesarios):
-                bloques.append(self.read(flujo))
-
-        return detector.calibrate(AudioClip.from_frames(bloques, self.sample_rate))
+            return self.calibrate_from(detector, flujo)
 
     def record_while(self, should_continue: Callable[[], bool]) -> AudioClip:
         """Graba mientras una condición se mantenga cierta.

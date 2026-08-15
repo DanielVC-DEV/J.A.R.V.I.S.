@@ -465,6 +465,39 @@ def copy_item(source: str, destination: str) -> tuple[Path, Path]:
     return origen, destino
 
 
+def open_in_explorer(path: str) -> Path:
+    """Abre una carpeta en el Explorador, o un archivo con su programa.
+
+    Es lo que el usuario espera al decir «abre mi proyecto»: una carpeta se
+    muestra, un documento se abre con la aplicación que le corresponda. Sin
+    esto, el asistente intenta interpretar la ruta como el nombre de un
+    programa instalado y no encuentra nada coherente.
+
+    Args:
+        path: Carpeta o archivo a abrir.
+
+    Returns:
+        La ruta abierta.
+
+    Raises:
+        FileError: Si no existe o el sistema no admite la operación.
+    """
+    destino = resolve_path(path)
+
+    if not destino.exists():
+        raise FileError(f"No existe «{destino}».")
+
+    if sys.platform != "win32":
+        raise FileError("Abrir carpetas solo está disponible en Windows.")
+
+    try:
+        os.startfile(destino)
+    except OSError as exc:
+        raise FileError(f"No se pudo abrir «{destino.name}»: {exc}") from exc
+
+    return destino
+
+
 def send_to_trash(path: str) -> Path:
     """Envía un archivo o una carpeta a la papelera de reciclaje.
 

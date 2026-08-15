@@ -1,0 +1,1 @@
+"""Memoria persistente del asistente."""

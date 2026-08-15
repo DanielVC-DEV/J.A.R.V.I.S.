@@ -251,8 +251,11 @@ def path_jail_policy(
                 return Verdict(
                     decision=Decision.DENY,
                     reason=(
-                        f"La ruta «{texto}» queda fuera de las carpetas sobre las "
-                        "que tengo permiso para operar."
+                        f"La ruta «{texto}» queda fuera de las carpetas sobre "
+                        "las que tengo permiso para operar. El usuario puede "
+                        "autorizarla añadiéndola a JARVIS_ALLOWED_PATHS en el "
+                        "archivo .env; dile eso en lugar de proponer copiar "
+                        "los archivos a otro sitio."
                     ),
                     policy="jaula de rutas",
                 )
@@ -273,9 +276,22 @@ class Guard:
     policies: list[Policy] = field(default_factory=list)
 
     @classmethod
-    def with_default_policies(cls) -> Guard:
-        """Crea un guardia con el conjunto de políticas recomendado."""
-        return cls(policies=[dangerous_command_policy, path_jail_policy()])
+    def with_default_policies(
+        cls, extra_roots: Sequence[Path] = ()
+    ) -> Guard:
+        """Crea un guardia con el conjunto de políticas recomendado.
+
+        Args:
+            extra_roots: Carpetas adicionales que el usuario haya autorizado,
+                además de las personales.
+        """
+        raices = (*default_allowed_roots(), *extra_roots) if extra_roots else None
+        return cls(
+            policies=[
+                dangerous_command_policy,
+                path_jail_policy(allowed_roots=raices),
+            ]
+        )
 
     def add_policy(self, policy: Policy) -> None:
         """Incorpora una política adicional."""

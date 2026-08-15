@@ -33,6 +33,7 @@ from jarvis.core.events import (
 from jarvis.core.orchestrator import ConfirmationRequest, Orchestrator
 from jarvis.core.registry import registry
 from jarvis.security.guard import Guard
+from jarvis.tools.memory_tools import manager as memory_manager
 
 __all__ = ["main"]
 
@@ -177,10 +178,11 @@ def main(argv: list[str] | None = None) -> int:
     orchestrator = Orchestrator(
         provider=provider,
         registry=registry,
-        guard=Guard.with_default_policies(),
+        guard=Guard.with_default_policies(settings.resolved_allowed_paths()),
         confirmer=_confirm,
         max_iterations=settings.max_tool_iterations,
         categories=settings.enabled_categories(),
+        context_provider=memory_manager().context_for,
     )
 
     console.print(

@@ -9,7 +9,9 @@ from jarvis.tools import (
     app_tools,
     file_tools,
     input_tools,
+    memory_tools,
     system_tools,
+    web_tools,
     window_tools,
 )
 
@@ -17,6 +19,8 @@ __all__ = [
     "app_tools",
     "file_tools",
     "input_tools",
+    "memory_tools",
     "system_tools",
+    "web_tools",
     "window_tools",
 ]

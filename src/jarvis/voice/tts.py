@@ -24,7 +24,13 @@ from typing import Any, Protocol, runtime_checkable
 
 from jarvis.config.settings import Settings
 
-__all__ = ["EdgeSpeaker", "Speaker", "SpeechError", "clean_for_speech"]
+__all__ = [
+    "EdgeSpeaker",
+    "Speaker",
+    "SpeechError",
+    "clean_for_speech",
+    "shorten_for_speech",
+]
 
 _logger = logging.getLogger(__name__)
 
@@ -95,6 +101,54 @@ def clean_for_speech(text: str) -> str:
     limpio = _LIST_BULLET.sub("", limpio)
     limpio = _MARKDOWN.sub("", limpio)
     return _WHITESPACE.sub(" ", limpio).strip()
+
+
+#: Final de frase, para poder cortar por donde el oído lo espera.
+_SENTENCE_END = re.compile(r"(?<=[.!?…])\s")
+
+#: Coletilla que se añade al recortar. Sin ella, el usuario creería que el
+#: asistente terminó de responder cuando en realidad quedaba texto.
+TRUNCATION_NOTICE = "Te lo dejo completo en pantalla."
+
+
+def shorten_for_speech(text: str, max_chars: int) -> str:
+    """Acorta un texto largo para pronunciarlo sin agotar la paciencia.
+
+    Una respuesta de tres párrafos con direcciones web es insufrible dicha en
+    voz alta, y además redundante: la pantalla ya la muestra entera. Se
+    pronuncian las primeras frases completas y se avisa de que hay más.
+
+    El corte se hace en un final de frase, nunca a mitad de palabra: una voz
+    que se interrumpe de golpe suena a fallo, no a resumen.
+
+    Args:
+        text: Texto ya preparado para pronunciar.
+        max_chars: Longitud máxima. Cero o menos desactiva el recorte.
+
+    Returns:
+        El texto a pronunciar.
+    """
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+
+    frases = _SENTENCE_END.split(text)
+    acumulado: list[str] = []
+    total = 0
+
+    for frase in frases:
+        if acumulado and total + len(frase) > max_chars:
+            break
+        acumulado.append(frase)
+        total += len(frase) + 1
+
+    dicho = " ".join(acumulado).strip()
+
+    # Si la primera frase ya excede el límite, se corta por palabras: es
+    # preferible una frase incompleta a un monólogo.
+    if not acumulado or len(dicho) > max_chars * 1.5:
+        dicho = text[:max_chars].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+
+    return f"{dicho} {TRUNCATION_NOTICE}"
 
 
 # --------------------------------------------------------------------------- #
@@ -184,6 +238,7 @@ class EdgeSpeaker:
         self._voice = settings.tts_voice
         self._rate = settings.tts_rate
         self._enabled = settings.tts_enabled
+        self._max_chars = settings.tts_max_chars
         self._player = player if player is not None else _Player()
 
     @property
@@ -249,7 +304,7 @@ class EdgeSpeaker:
         if not self._enabled:
             return False
 
-        preparado = clean_for_speech(text)
+        preparado = shorten_for_speech(clean_for_speech(text), self._max_chars)
         if not preparado:
             return False
 

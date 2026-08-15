@@ -60,6 +60,18 @@ MAX_RETRY_WAIT_SECONDS = 20.0
 #: El servicio indica el tiempo restante dentro del mensaje de error.
 _RETRY_IN = re.compile(r"try again in ([\d.]+)\s*(ms|s)\b", re.IGNORECASE)
 
+#: Señal de que el límite es de tokens por minuto y no de peticiones.
+_TOKEN_QUOTA = re.compile(r"tokens per minute|TPM", re.IGNORECASE)
+
+#: Espera mínima ante un límite de tokens por minuto.
+#:
+#: Es alta a propósito. Ante un límite por petición, reintentar enseguida es
+#: correcto. Ante uno por tokens, cada reintento **consume más cuota**: tres
+#: intentos de 2400 tokens gastan 7200 del presupuesto en lugar de 2400, y
+#: hunden más al asistente. Lo que hace falta es que la ventana deslizante se
+#: vacíe, y eso exige esperar de verdad.
+MIN_TOKEN_QUOTA_WAIT = 6.0
+
 
 def _retry_delay(response: httpx.Response, attempt: int) -> float:
     """Determina cuánto esperar antes de reintentar.
@@ -83,15 +95,26 @@ def _retry_delay(response: httpx.Response, attempt: int) -> float:
         except ValueError:
             pass
 
-    coincidencia = _RETRY_IN.search(response.text or "")
+    cuerpo = response.text or ""
+    por_tokens = bool(_TOKEN_QUOTA.search(cuerpo))
+
+    coincidencia = _RETRY_IN.search(cuerpo)
     if coincidencia:
         valor = float(coincidencia.group(1))
         segundos = valor / 1000 if coincidencia.group(2).lower() == "ms" else valor
         # Un margen sobre el tiempo indicado evita reintentar justo en el
         # límite y volver a ser rechazado.
-        return min(segundos + 0.5, MAX_RETRY_WAIT_SECONDS)
+        espera = segundos + 0.5
+    else:
+        espera = 2.0 * (attempt + 1)
 
-    return min(2.0 * (attempt + 1), MAX_RETRY_WAIT_SECONDS)
+    if por_tokens:
+        # El tiempo que indica el servicio es cuándo cabría *esta* petición si
+        # nada más consumiera cuota, no cuándo se habrá vaciado la ventana.
+        # Reintentar antes solo gasta presupuesto para nada.
+        espera = max(espera, MIN_TOKEN_QUOTA_WAIT * (attempt + 1))
+
+    return min(espera, MAX_RETRY_WAIT_SECONDS)
 
 
 def _describe_connection_failure(exc: httpx.RequestError, base_url: str) -> str:

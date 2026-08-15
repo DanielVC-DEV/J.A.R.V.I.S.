@@ -153,6 +153,31 @@ def test_the_jail_only_applies_to_its_categories(
     assert guard.evaluate(spec, {"texto": "C:\\Program Files\\App\\app.exe"}).allowed
 
 
+def test_extra_roots_widen_the_jail(reg: ToolRegistry, tmp_path: Path) -> None:
+    """Los proyectos de quien programa no viven en Documentos."""
+    from jarvis.security.guard import Guard as G
+
+    proyectos = tmp_path / "Proyectos"
+    proyectos.mkdir()
+
+    guard = G.with_default_policies(extra_roots=[proyectos])
+    spec = _spec(reg, Risk.SAFE, category="files")
+
+    assert guard.evaluate(spec, {"texto": str(proyectos / "jarvis")}).allowed
+    assert guard.evaluate(spec, {"texto": "C:\\Windows\\System32"}).denied
+
+
+def test_the_denial_explains_how_to_authorise(
+    reg: ToolRegistry, tmp_path: Path
+) -> None:
+    """Un «no puedo» sin salida obliga al usuario a adivinar."""
+    guard = Guard(policies=[path_jail_policy(allowed_roots=[tmp_path])])
+    spec = _spec(reg, Risk.SAFE, category="files")
+
+    veredicto = guard.evaluate(spec, {"texto": "D:\\Proyectos\\JARVIS"})
+    assert "JARVIS_ALLOWED_PATHS" in veredicto.reason
+
+
 def test_non_path_text_is_ignored_by_the_jail(
     reg: ToolRegistry, tmp_path: Path
 ) -> None:

@@ -22,6 +22,7 @@ __all__ = [
     "delete_file",
     "list_folder",
     "move_file",
+    "open_folder",
     "read_file",
     "search_files",
     "write_file",
@@ -44,6 +45,20 @@ def list_folder(path: str = "documentos", pattern: str = "*") -> str:
 
     lineas = "\n".join(f"· {e.describe()}" for e in entradas)
     return f"Contenido de {files.resolve_path(path)}:\n{lineas}"
+
+
+@tool(risk=Risk.SAFE, category="files")
+def open_folder(path: str) -> str:
+    """Abre una carpeta en el Explorador, o un archivo con su programa.
+
+    Úsala cuando el usuario nombre una ruta o un proyecto. Para abrir una
+    aplicación instalada, usa open_program.
+
+    Args:
+        path: Carpeta o archivo, como «D:/Proyectos» o «documentos/informe.pdf».
+    """
+    destino = files.open_in_explorer(path)
+    return f"Abierto {destino}."
 
 
 @tool(risk=Risk.SAFE, category="files")

@@ -19,6 +19,7 @@ dependencies = [
     "psutil>=6.0",
     "rich>=13.9",
     "send2trash>=1.8",
+    "ddgs>=9.0",
     # Voz: captura, activación y tratamiento del audio.
     "numpy>=1.26",
     "sounddevice>=0.4.6",
