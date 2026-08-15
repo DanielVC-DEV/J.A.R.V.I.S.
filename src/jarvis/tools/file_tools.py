@@ -111,7 +111,7 @@ def create_folder(path: str) -> str:
     return f"Carpeta creada: {carpeta}"
 
 
-@tool(risk=Risk.CONFIRM, category="files")
+@tool(risk=Risk.SAFE, category="files")
 def write_file(path: str, content: str, append: bool = False) -> str:
     """Escribe texto en un archivo, creándolo si no existe.
 
@@ -131,7 +131,7 @@ def write_file(path: str, content: str, append: bool = False) -> str:
     return f"Creado {archivo} con {len(content)} caracteres."
 
 
-@tool(risk=Risk.CONFIRM, category="files")
+@tool(risk=Risk.SAFE, category="files")
 def move_file(source: str, destination: str) -> str:
     """Mueve o renombra un archivo o una carpeta.
 
@@ -143,7 +143,7 @@ def move_file(source: str, destination: str) -> str:
     return f"Movido a {destino}."
 
 
-@tool(risk=Risk.CONFIRM, category="files")
+@tool(risk=Risk.SAFE, category="files")
 def copy_file(source: str, destination: str) -> str:
     """Copia un archivo o una carpeta.
 
@@ -155,7 +155,7 @@ def copy_file(source: str, destination: str) -> str:
     return f"Copiado a {destino}."
 
 
-@tool(risk=Risk.CONFIRM, category="files")
+@tool(risk=Risk.SAFE, category="files")
 def delete_file(path: str) -> str:
     """Envía un archivo o carpeta a la papelera. No borra definitivamente.
 

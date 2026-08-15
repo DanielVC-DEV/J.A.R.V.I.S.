@@ -59,21 +59,26 @@ def main(argv: list[str] | None = None) -> int:
         _error(QtWidgets, "Configuración incompleta", str(exc))
         return 1
 
-    if not settings.has_api_key():
-        # La aplicación instalada no trae ningún «.env»: sin esto, quien la
-        # reciba se encontraría con un error y ningún sitio donde corregirlo.
+    try:
+        provider = create_provider(settings)
+    except ConfigurationError:
+        # No se comprueba `has_api_key()` de antemano porque no toda
+        # configuración necesita una: Ollama en local no pide ninguna, y
+        # forzar el diálogo en ese caso sería un obstáculo en cada arranque.
+        # La aplicación instalada no trae ningún «.env»: sin este diálogo,
+        # quien la reciba se encontraría con un error y ningún sitio donde
+        # corregirlo.
         from jarvis.ui.gui.settings_dialog import SettingsDialog
 
         dialogo = SettingsDialog(settings)
         if dialogo.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return 1
         settings = load_settings()
-
-    try:
-        provider = create_provider(settings)
-    except ConfigurationError as exc:
-        _error(QtWidgets, "Configuración incompleta", str(exc))
-        return 1
+        try:
+            provider = create_provider(settings)
+        except ConfigurationError as exc:
+            _error(QtWidgets, "Configuración incompleta", str(exc))
+            return 1
     except Exception as exc:  # noqa: BLE001 - frontera hacia el usuario
         _error(QtWidgets, "No se pudo iniciar", str(exc))
         return 1

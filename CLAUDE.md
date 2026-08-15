@@ -152,6 +152,12 @@ Están resueltos. Anotados para no reintroducirlos.
 - **El fallo de certificado llega envuelto en `ConnectError`**, así que esa
   comprobación va antes que las de tipo.
 - **`open_program` no admite rutas.** Para carpetas existe `open_folder`.
+- **El primer turno contra Ollama en frío puede superar los 60 s** de
+  `REQUEST_TIMEOUT_SECONDS` (pensado para APIs en la nube) mientras el modelo
+  se carga en memoria. Se resuelve solo probando de nuevo, sin tocar código:
+  con el modelo ya cargado, `llama3.1` de 8B respondió y llamó a una
+  herramienta con normalidad. Si molesta, se puede precalentar con
+  `ollama run <modelo>` antes de abrir JARVIS.
 
 ## 8. Estado por etapas
 
@@ -165,12 +171,12 @@ Están resueltos. Anotados para no reintroducirlos.
 | 6 | Memoria persistente | hecha |
 | 7 | Interfaz gráfica | hecha |
 | 8 | Endurecimiento: reglas dinámicas, visor del diario | hecha |
-| 9 | Optimización y backend local con Ollama | pendiente |
+| 9 | Optimización y backend local con Ollama | hecha |
 | 10 | PyInstaller `--onedir` + instalador Inno Setup | pendiente |
 
-**Lo siguiente:** etapa 9. Optimización y backend local con Ollama —hoy todo
-pasa por un servicio remoto; falta comprobar el catálogo de modelos locales y
-el rendimiento del bucle de herramientas contra `ollama` en `JARVIS_BASE_URL`.
+**Lo siguiente:** etapa 10. Empaquetar con PyInstaller `--onedir` y un
+instalador Inno Setup, para tener un `JARVIS-Setup.exe` instalable sin tocar
+el código fuente.
 
 ## 9. Órdenes habituales
 

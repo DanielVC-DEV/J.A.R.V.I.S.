@@ -49,7 +49,7 @@ def list_memory() -> str:
     return manager().summary()
 
 
-@tool(risk=Risk.CONFIRM, category="memory")
+@tool(risk=Risk.SAFE, category="memory")
 def forget(subject: str) -> str:
     """Olvida una anotación concreta.
 
@@ -59,7 +59,7 @@ def forget(subject: str) -> str:
     return manager().forget(subject)
 
 
-@tool(risk=Risk.CONFIRM, category="memory")
+@tool(risk=Risk.SAFE, category="memory")
 def clear_memory() -> str:
     """Borra toda la memoria. Irreversible."""
     return manager().clear()

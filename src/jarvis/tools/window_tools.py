@@ -123,7 +123,7 @@ def maximise_window(name: str) -> str:
     return f"{ventana.title} maximizada."
 
 
-@tool(risk=Risk.CONFIRM, category="windows")
+@tool(risk=Risk.SAFE, category="windows")
 def close_window(name: str) -> str:
     """Cierra una ventana. La aplicación puede pedir guardar los cambios.
 
