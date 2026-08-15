@@ -16,13 +16,21 @@ la interfaz y esta se almacena cifrada por el sistema operativo mediante
 
 from __future__ import annotations
 
+import json
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from pydantic import Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    JsonConfigSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+
+from jarvis.config.paths import config_file
 
 __all__ = [
     "KNOWN_ENDPOINTS",
@@ -32,6 +40,7 @@ __all__ = [
     "SttBackend",
     "delete_api_key",
     "load_settings",
+    "save_settings",
     "store_api_key",
 ]
 
@@ -186,6 +195,32 @@ class Settings(BaseSettings):
         protected_namespaces=(),
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Añade las preferencias guardadas desde la pantalla de configuración.
+
+        Se inserta entre el «.env» y los valores por omisión, de modo que el
+        orden de prioridad documentado al principio del módulo se mantiene:
+        variable de entorno, luego «.env» —pensados para desarrollo—, y solo
+        si ninguno de los dos fija un valor se usa lo que el usuario final
+        guardó desde la interfaz. Un archivo ausente no es un error: la
+        primera vez que se instala la aplicación aún no existe.
+        """
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            JsonConfigSettingsSource(settings_cls, json_file=config_file()),
+            file_secret_settings,
+        )
+
     provider: Provider = Field(
         default=Provider.ANTHROPIC,
         description="Familia de API con la que se habla.",
@@ -263,6 +298,25 @@ class Settings(BaseSettings):
             if ruta.is_dir():
                 rutas.append(ruta.resolve())
         return tuple(rutas)
+
+    blocked_patterns: str = Field(
+        default="",
+        description=(
+            "Fragmentos de texto adicionales que el guardia debe denegar, "
+            "separados por punto y coma. Se comparan sin distinguir "
+            "mayúsculas contra cualquier argumento de texto. Es la única "
+            "regla del guardia que edita el usuario: solo puede sumar "
+            "restricciones a las de fábrica, nunca relajarlas."
+        ),
+    )
+
+    def resolved_blocked_patterns(self) -> tuple[str, ...]:
+        """Devuelve los fragmentos bloqueados, sin vacíos ni espacios sobrantes."""
+        return tuple(
+            limpio
+            for texto in self.blocked_patterns.replace(",", ";").split(";")
+            if (limpio := texto.strip())
+        )
 
     tool_categories: str = Field(
         default="",
@@ -568,6 +622,43 @@ class Settings(BaseSettings):
             f"api_key=<{estado}>, max_tokens={self.max_tokens}, "
             f"log_level={self.log_level!r})"
         )
+
+
+def save_settings(values: dict[str, object]) -> None:
+    """Guarda las preferencias editadas desde la pantalla de configuración.
+
+    Sobrescribe por completo ``settings.json`` con los valores recibidos: el
+    diálogo es el único lugar que escribe en ese archivo, así que no hay
+    valores previos que preservar. La clave de API se excluye siempre, tanto
+    si aparece en ``values`` como si no: solo se guarda cifrada en el almacén
+    de credenciales, mediante :func:`store_api_key`.
+
+    Args:
+        values: Pareja de campo y valor a guardar. Los campos ``api_key`` y
+            ``stt_api_key`` se descartan si aparecen, y también los valores
+            ``None``.
+
+    Raises:
+        ConfigurationError: Si el directorio de datos no se puede escribir.
+    """
+    limpio = {
+        campo: valor
+        for campo, valor in values.items()
+        if campo not in {"api_key", "stt_api_key"} and valor is not None
+    }
+
+    ruta = config_file()
+    try:
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        ruta.write_text(
+            json.dumps(limpio, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    except OSError as exc:
+        raise ConfigurationError(
+            f"No se pudieron guardar las preferencias en «{ruta}»: {exc}"
+        ) from exc
+
+    load_settings.cache_clear()
 
 
 @lru_cache(maxsize=1)

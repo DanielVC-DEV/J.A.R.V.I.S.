@@ -8,6 +8,7 @@ duplicar la preparación.
 Uso::
 
     python main.py              # consola de texto
+    python main.py --gui        # ventana de escritorio
     python main.py --voz        # escuchando por micrófono
     python main.py --verbose    # con detalle de herramientas y tokens
 """
@@ -19,6 +20,11 @@ import sys
 
 def main() -> int:
     """Arranca el cliente indicado en la línea de órdenes."""
+    if "--gui" in sys.argv:
+        from jarvis.ui.gui.app import main as gui_main
+
+        return gui_main()
+
     if "--voz" in sys.argv:
         from jarvis.ui.voice_app import main as voice_main
 

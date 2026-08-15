@@ -45,6 +45,11 @@ dev = [
     "mypy>=1.13",
 ]
 
+# Interfaz gráfica de escritorio.
+gui = [
+    "PySide6>=6.6",
+]
+
 # Transcripción en el propio equipo. Se mantiene aparte porque pesa más de un
 # gigabyte y no hace falta si se usa el servicio remoto.
 local-stt = [

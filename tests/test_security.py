@@ -13,6 +13,7 @@ from jarvis.security.guard import (
     Decision,
     Guard,
     Verdict,
+    custom_blocklist_policy,
     dangerous_command_policy,
     path_jail_policy,
 )
@@ -184,6 +185,33 @@ def test_non_path_text_is_ignored_by_the_jail(
     guard = Guard(policies=[path_jail_policy(allowed_roots=[tmp_path])])
     spec = _spec(reg, Risk.SAFE, category="files")
     assert guard.evaluate(spec, {"texto": "informe trimestral"}).allowed
+
+
+# --------------------------------------------------------------------------- #
+# Lista bloqueada del usuario
+# --------------------------------------------------------------------------- #
+
+
+def test_a_blocked_fragment_is_denied(reg: ToolRegistry) -> None:
+    guard = Guard(policies=[custom_blocklist_policy(["contraseñas.txt"])])
+    veredicto = guard.evaluate(_spec(reg, Risk.SAFE), {"t": "lee contraseñas.txt"})
+    assert veredicto.denied
+
+
+def test_unrelated_text_is_allowed_by_the_blocklist(reg: ToolRegistry) -> None:
+    guard = Guard(policies=[custom_blocklist_policy(["contraseñas.txt"])])
+    assert guard.evaluate(_spec(reg, Risk.SAFE), {"t": "informe.txt"}).allowed
+
+
+def test_the_blocklist_ignores_case(reg: ToolRegistry) -> None:
+    guard = Guard(policies=[custom_blocklist_policy(["secreto"])])
+    assert guard.evaluate(_spec(reg, Risk.SAFE), {"t": "el SECRETO está aquí"}).denied
+
+
+def test_an_empty_blocklist_adds_no_policy(reg: ToolRegistry) -> None:
+    """`with_default_policies` no debe añadir una política vacía por omisión."""
+    guard = Guard.with_default_policies()
+    assert len(guard.policies) == 2
 
 
 # --------------------------------------------------------------------------- #

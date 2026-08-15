@@ -84,7 +84,10 @@ def main(argv: list[str] | None = None) -> int:
         orchestrator=Orchestrator(
             provider=provider,
             registry=registry,
-            guard=Guard.with_default_policies(settings.resolved_allowed_paths()),
+            guard=Guard.with_default_policies(
+                settings.resolved_allowed_paths(),
+                blocked_patterns=settings.resolved_blocked_patterns(),
+            ),
             confirmer=_confirm,
             max_iterations=settings.max_tool_iterations,
             categories=settings.enabled_categories(),

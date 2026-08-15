@@ -34,6 +34,7 @@ __all__ = [
     "Guard",
     "Policy",
     "Verdict",
+    "custom_blocklist_policy",
     "dangerous_command_policy",
     "default_allowed_roots",
     "path_jail_policy",
@@ -167,6 +168,49 @@ def dangerous_command_policy(
 
 
 # --------------------------------------------------------------------------- #
+# Política: lista bloqueada del usuario
+# --------------------------------------------------------------------------- #
+
+
+def custom_blocklist_policy(patterns: Sequence[str]) -> Policy:
+    """Construye una política a partir de los fragmentos que el usuario bloqueó.
+
+    A diferencia de ``dangerous_command_policy``, cuyos patrones son fijos y
+    viven en el código, estos los escribe el usuario en la pantalla de
+    configuración. Es la única regla «dinámica» del guardia, y respeta la
+    misma asimetría que el resto: solo puede sumar restricciones, nunca
+    relajar las de fábrica.
+
+    Args:
+        patterns: Fragmentos de texto a denegar. Se comparan como texto
+            literal, sin distinguir mayúsculas: el usuario escribe lo que
+            quiere bloquear, no una expresión regular que pueda escribir mal.
+
+    Returns:
+        La política, lista para registrarse en el guardia.
+    """
+    compilados = tuple(
+        (re.compile(re.escape(patron), re.IGNORECASE), patron) for patron in patterns
+    )
+
+    def policy(spec: ToolSpec, arguments: dict[str, Any]) -> Verdict | None:
+        for texto in _text_arguments(arguments):
+            for compilado, original in compilados:
+                if compilado.search(texto):
+                    return Verdict(
+                        decision=Decision.DENY,
+                        reason=(
+                            f"La llamada a «{spec.name}» contiene «{original}», que "
+                            "el usuario bloqueó desde la configuración."
+                        ),
+                        policy="lista bloqueada del usuario",
+                    )
+        return None
+
+    return policy
+
+
+# --------------------------------------------------------------------------- #
 # Política: jaula de rutas
 # --------------------------------------------------------------------------- #
 
@@ -277,21 +321,26 @@ class Guard:
 
     @classmethod
     def with_default_policies(
-        cls, extra_roots: Sequence[Path] = ()
+        cls,
+        extra_roots: Sequence[Path] = (),
+        blocked_patterns: Sequence[str] = (),
     ) -> Guard:
         """Crea un guardia con el conjunto de políticas recomendado.
 
         Args:
             extra_roots: Carpetas adicionales que el usuario haya autorizado,
                 además de las personales.
+            blocked_patterns: Fragmentos de texto que el usuario quiere
+                denegar, además de los patrones destructivos de fábrica.
         """
         raices = (*default_allowed_roots(), *extra_roots) if extra_roots else None
-        return cls(
-            policies=[
-                dangerous_command_policy,
-                path_jail_policy(allowed_roots=raices),
-            ]
-        )
+        policies: list[Policy] = [
+            dangerous_command_policy,
+            path_jail_policy(allowed_roots=raices),
+        ]
+        if blocked_patterns:
+            policies.append(custom_blocklist_policy(blocked_patterns))
+        return cls(policies=policies)
 
     def add_policy(self, policy: Policy) -> None:
         """Incorpora una política adicional."""

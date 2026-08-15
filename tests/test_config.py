@@ -11,11 +11,12 @@ from pathlib import Path
 import pytest
 
 from jarvis.config import settings as settings_module
-from jarvis.config.paths import data_dir
+from jarvis.config.paths import config_file, data_dir
 from jarvis.config.settings import (
     ConfigurationError,
     Settings,
     load_settings,
+    save_settings,
 )
 
 
@@ -64,6 +65,11 @@ def test_unknown_log_level_is_rejected() -> None:
 def test_a_blank_model_falls_back_to_the_default() -> None:
     """Copiar la plantilla .env no debe dejar el asistente sin arrancar."""
     assert _build(model="   ").resolved_model() == _build().resolved_model()
+
+
+def test_blocked_patterns_are_split_and_trimmed() -> None:
+    settings = _build(blocked_patterns=" contraseñas.txt ; secretos ")
+    assert settings.resolved_blocked_patterns() == ("contraseñas.txt", "secretos")
 
 
 def test_an_unknown_provider_is_rejected() -> None:
@@ -151,3 +157,53 @@ def test_data_dir_can_be_overridden(
         assert data_dir() == tmp_path.resolve()
     finally:
         data_dir.cache_clear()
+
+
+# --------------------------------------------------------------------------- #
+# Preferencias guardadas desde la pantalla de configuración
+# --------------------------------------------------------------------------- #
+
+
+def test_no_saved_preferences_file_is_not_an_error() -> None:
+    """La primera vez que arranca la aplicación no existe «settings.json»."""
+    assert not config_file().exists()
+    assert _build().model == ""
+
+
+def test_saved_preferences_are_read_back() -> None:
+    save_settings({"model": "modelo-guardado", "max_tokens": 512})
+    assert config_file().exists()
+
+    settings = _build()
+    assert settings.model == "modelo-guardado"
+    assert settings.max_tokens == 512
+
+
+def test_environment_takes_precedence_over_saved_preferences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    save_settings({"model": "modelo-guardado"})
+    monkeypatch.setenv("JARVIS_MODEL", "modelo-del-entorno")
+    assert _build().model == "modelo-del-entorno"
+
+
+def test_saved_preferences_never_include_the_api_key() -> None:
+    """La clave solo se guarda cifrada en el almacén, nunca en el JSON."""
+    save_settings({"model": "x", "api_key": "no-debe-guardarse"})
+    contenido = config_file().read_text(encoding="utf-8")
+    assert "no-debe-guardarse" not in contenido
+    assert not _build().has_api_key()
+
+
+def test_saving_preferences_overwrites_previous_values() -> None:
+    save_settings({"model": "primero", "max_tokens": 128})
+    save_settings({"model": "segundo"})
+    settings = _build()
+    assert settings.model == "segundo"
+    assert settings.max_tokens == 1024  # de vuelta al valor por omisión
+
+
+def test_saving_preferences_clears_the_settings_cache() -> None:
+    load_settings()
+    save_settings({"model": "recien-guardado"})
+    assert load_settings().model == "recien-guardado"
